@@ -1,0 +1,77 @@
+/* =================================================================
+   Minimal 主题最终定制版 (v7.0)
+   功能：全标题统一紫色 + 粉色无背景代码 + 深红加粗 + 安全滚动
+   ================================================================= */
+
+/* -----------------------------------------------------------------
+   1. 标题配色 (H1-H6 全部统一)
+   ----------------------------------------------------------------- */
+/* 核心修改：所有标题等级都使用同一个“静谧紫”颜色 */
+body {
+    --h1-color: #7d5fff !important; 
+    --h2-color: #7d5fff !important; 
+    --h3-color: #7d5fff !important; 
+    --h4-color: #7d5fff !important; 
+    --h5-color: #7d5fff !important; 
+    --h6-color: #7d5fff !important;
+    
+    /* 链接颜色保持亮蓝，与紫色搭配 */
+    --link-color: #54a0ff !important; 
+}
+
+/* -----------------------------------------------------------------
+   2. 行内代码 (Inline Code) - 粉色字，无背景 (保持你的喜好)
+   ----------------------------------------------------------------- */
+/* 阅读模式 */
+body .markdown-rendered :not(pre) > code {
+    color: #e84393 !important;        /* 干枯玫瑰粉 */
+    background-color: transparent !important; /* 无背景 */
+    font-weight: 600 !important;
+    font-family: var(--font-monospace) !important;
+}
+
+/* 实时预览模式 */
+body .cm-s-obsidian span.cm-inline-code,
+body .cm-s-obsidian span.cm-code {
+    color: #e84393 !important;        
+    background-color: transparent !important;
+}
+
+/* -----------------------------------------------------------------
+   3. 加粗 (**Bold**) - 统一深红色 (保持你的喜好)
+   ----------------------------------------------------------------- */
+body .cm-s-obsidian span.cm-formatting-strong,
+body .cm-s-obsidian span.cm-strong,
+body strong {
+    color: #d63031 !important; /* 统一深红色 */
+}
+
+/* -----------------------------------------------------------------
+   4. 代码块安全滚动 (保持你的喜好)
+   ----------------------------------------------------------------- */
+.markdown-rendered pre,
+.markdown-source-view.mod-cm6 .cm-content pre {
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(0,0,0,0.05);
+    border-radius: 6px;
+}
+
+.markdown-rendered pre code,
+.markdown-source-view.mod-cm6 .cm-content pre code {
+    white-space: pre !important;
+    overflow-x: auto !important;
+    display: block !important;
+    padding: 1em !important;
+    padding-bottom: 1.5em !important;
+    font-family: var(--font-monospace);
+    font-size: var(--code-size);
+}
+
+/* 复制按钮 */
+.copy-code-button {
+    background-color: var(--background-primary) !important;
+    opacity: 0.8;
+    z-index: 100;
+}

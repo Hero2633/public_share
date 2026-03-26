@@ -1,0 +1,10 @@
+{
+  "cssTheme": "",
+  "enabledCssSnippets": [
+    "style"
+  ],
+  "baseFontSizeAction": true,
+  "baseFontSize": 17,
+  "theme": "system",
+  "accentColor": "#871de6"
+}

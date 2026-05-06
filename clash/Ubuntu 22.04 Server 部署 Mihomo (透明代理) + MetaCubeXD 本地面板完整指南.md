@@ -94,8 +94,7 @@ _(注意：此配置已包含 TUN、Fake-IP 以及绝对路径的 UI 指向，�
 ```YAML
 # 1. 开启外部控制台（方便后续看延迟和切节点）
 external-controller: '0.0.0.0:9090' # 允许外部访问控制 API
-external-ui: /etc/mihomo/ui         # 指定前端面板文件路径
-external-ui-port: 9090              # Web UI 端口，与 external-controller 保持一致
+external-ui: /etc/mihomo/ui         # 指定前端面板文件路径，访问地址为 API地址/ui
 secret: '你的自定义密码'             # 必填！设置一个密码防止别人控制你的代理
 
 # 2. 开启 DNS 劫持（TUN 模式必须配合 DNS 劫持才能完美工作）
@@ -137,7 +136,6 @@ sniffer:
 
 **端口说明**：
 - `external-controller: 0.0.0.0:9090` - API 控制端口，用于远程管理
-- `external-ui-port: 9090` - Web UI 访问端口，与 API 端口保持一致
 - 访问面板时使用 `http://服务器IP:9090/ui/`
 
 Mihomo 本身命令：

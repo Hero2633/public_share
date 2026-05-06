@@ -11,7 +11,7 @@
     
 - **核心功能**：全局透明代理 (TUN 模式)、本地 Web UI 控制、国内外流量自动分流。
 ---
-**本教程只配置TUN模式，不配置系统代理！！！！！！！！！**
+**本教程只配置TUN模式，不配置系统代理！**
 ## 一、 安装 Mihomo 内核
 
 **1. 下载并解压核心文件**
@@ -76,10 +76,10 @@ sudo mkdir -p /etc/mihomo
 **2. 编辑主配置文件**
 
 ```Bash
-curl -L -o /etc/mihomo/config.yaml "你的订阅连接!"
+curl -L -o /etc/mihomo/config.yaml "你的订阅链接!"
 ```
 ![](attachments/Ubuntu%2022.04%20Server%20部署%20Mihomo%20(透明代理)%20+%20MetaCubeXD%20本地面板完整指南/file-20260326121136474.png)
-注意选**择Mihomo内核**！不要选择“复制订阅”！
+注意**选择Mihomo内核**！不要选择“复制订阅”！
 
 >如果没有`选择Mihomo内核`这一个选项，可以直接从Windows下的clash软件中导出yaml文件，然再上传到服务器，eg:
 >![](attachments/Ubuntu%2022.04%20Server%20部署%20Mihomo%20(透明代理)%20+%20MetaCubeXD%20本地面板完整指南/file-20260326121127178.png)
@@ -90,12 +90,14 @@ curl -L -o /etc/mihomo/config.yaml "你的订阅连接!"
 
 _(注意：此配置已包含 TUN、Fake-IP 以及绝对路径的 UI 指向，具体的 `proxies`、`proxy-groups` 和 `rules` 请保留你之前导入的内容)_
 
-以下yaml文件可以直接导入config.yaml文件中，如果有字段冲突，可以以下面的配置为准!
+以下YAML文件可以直接导入config.yaml文件中，如果有字段冲突，可以以下面的配置为准!
 ```YAML
 # 1. 开启外部控制台（方便后续看延迟和切节点）
 external-controller: '0.0.0.0:9090' # 允许外部访问控制 API
 external-ui: /etc/mihomo/ui         # 指定前端面板文件路径，访问地址为 API地址/ui
 secret: '你的自定义密码'             # 必填！设置一个密码防止别人控制你的代理
+
+> **密码设置提示**：建议使用字母和数字组合，避免使用 `'`、`"`、`:` 等特殊字符，以免YAML解析出错。
 
 # 2. 开启 DNS 劫持（TUN 模式必须配合 DNS 劫持才能完美工作）
 dns:
@@ -203,126 +205,317 @@ sudo systemctl status mihomo  # 查看运行状态
     
 - 验证代理 (海外 IP)：`curl ifconfig.me` 或 `curl ipinfo.io`
     
-## 七、 后续无损更新指南 (内核与面板)
 
-随着代理协议的升级和前端功能的迭代，定期更新可以获得更好的性能和稳定性。以下提供“手动逐条执行”和“一键全自动脚本”两种更新方式。
+## 七、 一键化管理脚本 (mihomo-manager)
 
-### 方法一：手动更新 (适用于了解具体步骤的进阶操作)
+为了简化 Mihomo 和 MetaCubeXD 的安装、更新和卸载过程，我们提供了一个一键化管理脚本 `mihomo-manager`。
 
-**1. 更新 Mihomo 内核 (Core)** 当 Github 发布了新版本（假设为 `vX.X.X`），依次执行：
+### 7.1 脚本功能介绍
+
+`mihomo-manager` 脚本提供以下功能：
+
+| 功能 | 说明 |
+|------|------|
+| `--install, -i` | 安装 Mihomo 和 MetaCubeXD（支持订阅链接或本地配置文件） |
+| `--update, -u` | 更新到最新版本（自动使用当前代理下载资源） |
+| `--uninstall` | 完全卸载 Mihomo 和所有配置 |
+| `--version, -V` | 显示当前安装的版本信息 |
+| `--check, -c` | 检查是否有新版本可用 |
+| `--verbose` | 显示详细执行过程 |
+| `--quiet` | 静默模式（只显示错误） |
+| `--help, -h` | 显示帮助信息 |
+
+### 7.2 安装脚本到系统
+
+将脚本安装到 `/usr/local/bin/` 目录，使其全局可用：
 
 ```Bash
-# 停止当前服务释放文件占用
+# 复制脚本到系统目录
+sudo cp mihomo-manager.sh /usr/local/bin/mihomo-manager
+
+# 赋予执行权限
+sudo chmod +x /usr/local/bin/mihomo-manager
+
+# 验证安装
+mihomo-manager --version
+```
+
+> **说明**：脚本文件 `mihomo-manager.sh` 与本文档在同一目录下。
+
+### 7.3 使用方法
+
+#### 1. 安装 Mihomo 和 MetaCubeXD
+
+**使用订阅链接安装：**
+
+```Bash
+sudo mihomo-manager --install -i "https://你的订阅链接"
+```
+
+**使用本地配置文件安装：**
+
+```Bash
+# 先下载配置文件
+curl -L -o ~/config.yaml "https://你的订阅链接"
+
+# 使用本地文件安装
+sudo mihomo-manager --install -i ~/config.yaml
+```
+
+**安装过程说明：**
+
+脚本会自动执行以下步骤：
+1. 检查系统环境（Ubuntu 22.04, amd64）
+2. 下载并安装最新版 Mihomo 内核
+3. 创建配置目录 `/etc/mihomo`
+4. 处理订阅链接或配置文件
+5. 合并默认配置（TUN、DNS、sniffer 等）
+6. 下载并安装最新版 MetaCubeXD 面板
+7. 创建 systemd 服务
+8. 启动服务并验证
+
+**安装完成后，脚本会显示：**
+
+```
+========================================
+  安装完成！
+========================================
+
+  Mihomo 版本:     v1.19.24
+  MetaCubeXD 版本: v1.246.3
+
+  配置文件:        /etc/mihomo/config.yaml
+  面板地址:        http://192.168.1.100:9090/ui/
+  面板密码:        mihomo2024 (请尽快修改)
+
+  测试命令:
+    直连测试: curl cip.cc
+    代理测试: curl ifconfig.me
+
+========================================
+```
+
+#### 2. 使用代理
+
+如果网络环境需要代理才能访问 GitHub，可以使用 `--proxy` 参数指定代理地址：
+
+**使用本地代理（只指定端口）：**
+
+```Bash
+# 使用本地 7890 端口的代理
+sudo mihomo-manager --update --proxy 7890
+
+# 检查更新时使用代理
+mihomo-manager --check --proxy 7890
+```
+
+**使用远程代理（指定 IP 和端口）：**
+
+```Bash
+# 使用远程代理服务器
+sudo mihomo-manager --update --proxy 192.168.1.100:7890
+
+# 检查更新时使用代理
+mihomo-manager --check --proxy 192.168.1.100:7890
+```
+
+**代理说明：**
+- 支持 HTTP 和 SOCKS5 代理协议
+- 代理地址格式：`端口` 或 `IP:端口`
+- 使用代理时，脚本会自动检测代理是否可用
+
+#### 3. 更新 Mihomo 和 MetaCubeXD
+
+**更新到最新版本：**
+
+```Bash
+sudo mihomo-manager --update
+```
+
+**更新到指定版本：**
+
+```Bash
+sudo mihomo-manager --update -v v1.19.22
+```
+
+**使用代理更新：**
+
+```Bash
+sudo mihomo-manager --update --proxy 7890
+```
+
+**更新过程说明：**
+
+脚本会自动执行以下步骤：
+1. 获取最新版本信息
+2. **使用当前 Mihomo 代理下载新资源**（避免网络问题）
+3. 停止 Mihomo 服务
+4. 替换内核文件
+5. 替换面板文件
+6. 重启服务
+
+**更新完成后，脚本会显示：**
+
+```
+========================================
+  更新完成！
+========================================
+
+  Mihomo:     v1.19.22 -> v1.19.24
+  MetaCubeXD: v1.241.3 -> v1.246.3
+
+  请在浏览器按 Ctrl+F5 强制刷新面板缓存
+========================================
+```
+
+#### 4. 卸载 Mihomo 和 MetaCubeXD
+
+```Bash
+sudo mihomo-manager --uninstall
+```
+
+**卸载过程说明：**
+
+脚本会询问是否保留配置文件备份：
+- 选择 `Y` 或直接回车：备份配置到 `~/mihomo-backup-YYYYMMDDHHMMSS/`
+- 选择 `n`：不备份，直接删除
+
+卸载步骤：
+1. 停止 Mihomo 服务
+2. 禁用 systemd 服务
+3. 删除服务文件
+4. 删除可执行文件
+5. 删除配置目录
+6. 清理日志文件
+
+#### 5. 查看版本信息
+
+```Bash
+mihomo-manager --version
+```
+
+**输出示例：**
+
+```
+mihomo-manager: 1.1.0
+Mihomo:         Mihomo Meta v1.19.24 linux amd64 with go1.26.2
+MetaCubeXD:     v1.246.3
+```
+
+#### 6. 检查版本更新
+
+```Bash
+mihomo-manager --check
+```
+
+**输出示例：**
+
+```
+[INFO] 检查最新版本...
+
+组件            当前版本        最新版本        状态
+--------------------------------------------------------
+Mihomo         v1.19.24        v1.19.24        已是最新
+MetaCubeXD     v1.246.3        v1.246.3        已是最新
+```
+
+### 7.4 参数说明
+
+| 参数 | 说明 |
+|------|------|
+| `--install, -i <url\|file.yaml>` | 安装 Mihomo 和 MetaCubeXD |
+| `--update, -u` | 更新到最新版本 |
+| `--update, -u -v <version>` | 更新到指定版本（如 `v1.19.22`） |
+| `--uninstall` | 完全卸载 |
+| `--version, -V` | 显示版本信息 |
+| `--check, -c` | 检查是否有新版本 |
+| `--verbose` | 显示详细执行过程 |
+| `--quiet` | 静默模式（只显示错误） |
+| `--help, -h` | 显示帮助信息 |
+
+### 7.5 故障排除
+
+#### 1. 脚本无法运行
+
+```Bash
+# 检查脚本权限
+ls -la /usr/local/bin/mihomo-manager
+
+# 如果没有执行权限，添加权限
+sudo chmod +x /usr/local/bin/mihomo-manager
+```
+
+#### 2. 下载失败
+
+如果下载失败，脚本会自动重试 3 次。如果仍然失败，请检查：
+- 网络连接是否正常
+- 是否需要配置代理
+- GitHub 是否可访问
+
+#### 3. 更新时代理不可用
+
+脚本会自动检测当前运行的 Mihomo 代理，并使用它下载更新资源。如果代理不可用，脚本会回退到直连下载。
+
+#### 4. 安装后无法访问面板
+
+```Bash
+# 检查 Mihomo 服务状态
+sudo systemctl status mihomo
+
+# 检查配置文件语法
+sudo mihomo -d /etc/mihomo -t
+
+# 检查防火墙设置
+sudo ufw status
+sudo ufw allow 9090/tcp
+```
+
+#### 5. 查看详细日志
+
+```Bash
+# 查看脚本执行日志
+cat /var/log/mihomo-manager.log
+
+# 查看 Mihomo 服务日志
+sudo journalctl -u mihomo -f
+```
+
+### 7.6 配置文件位置
+
+| 文件 | 说明 |
+|------|------|
+| `/usr/local/bin/mihomo-manager` | 管理脚本 |
+| `/usr/local/bin/mihomo` | Mihomo 可执行文件 |
+| `/etc/mihomo/config.yaml` | Mihomo 配置文件 |
+| `/etc/mihomo/ui/` | MetaCubeXD 前端面板文件 |
+| `/etc/systemd/system/mihomo.service` | systemd 服务文件 |
+| `/var/log/mihomo-manager.log` | 脚本执行日志 |
+
+### 7.7 备份与恢复
+
+**自动备份：**
+
+脚本在更新和卸载前会自动备份配置文件到 `~/mihomo-backup-YYYYMMDDHHMMSS/` 目录。
+
+**手动备份：**
+
+```Bash
+# 备份配置文件
+sudo cp -r /etc/mihomo ~/mihomo-backup-$(date +%Y%m%d%H%M%S)
+```
+
+**恢复配置：**
+
+```Bash
+# 停止服务
 sudo systemctl stop mihomo
 
-# 下载新版内核 (注意替换链接中的版本号)
-wget https://mirror.ghproxy.com/https://github.com/MetaCubeX/mihomo/releases/download/vX.X.X/mihomo-linux-amd64-vX.X.X.gz -O mihomo.gz
+# 恢复配置文件
+sudo cp -r ~/mihomo-backup-YYYYMMDDHHMMSS/config.yaml /etc/mihomo/
 
-# 解压并替换旧核心
-gunzip mihomo.gz
-sudo mv mihomo /usr/local/bin/mihomo
-sudo chmod +x /usr/local/bin/mihomo
+# 验证配置
+sudo mihomo -d /etc/mihomo -t
 
-# 重启服务并检查版本
-sudo systemctl start mihomo
-mihomo -v
-```
-
-**2. 更新 MetaCubeXD 前端面板 (UI)** 当面板发布了新版本（假设为 `vY.Y.Y`），依次执行：
-
-```Bash
-# 清空旧的前端文件 (安全操作，不会删掉 config.yaml)
-sudo rm -rf /etc/mihomo/ui/*
-
-# 下载新版面板压缩包 (注意替换链接中的版本号)
-wget https://mirror.ghproxy.com/https://github.com/MetaCubeX/metacubexd/releases/download/vY.Y.Y/compressed-dist.tgz -O /etc/mihomo/ui.tgz
-
-# 解压到 ui 目录并清理压缩包
-sudo tar -xzvf /etc/mihomo/ui.tgz -C /etc/mihomo/ui
-sudo rm /etc/mihomo/ui.tgz
-
-# 修复权限并重启服务加载新网页
-sudo chown -R root:root /etc/mihomo/ui
-sudo chmod -R 755 /etc/mihomo/ui
+# 重启服务
 sudo systemctl restart mihomo
 ```
-
-_(注意：更新面板后，务必在浏览器中按下 `Ctrl + F5` 强制刷新缓存，否则可能显示错位。)_
-
----
-
-### 方法二：一键自动更新脚本 (强烈推荐)
-
-为了省去每次复制粘贴命令的麻烦，你可以创建一个自动化 Shell 脚本，以后只需运行这个脚本，输入你想更新的版本号即可自动完成全套流程。
-
-**1. 创建脚本文件**
-
-```Bash
-nano ~/update_mihomo.sh
-```
-
-**2. 粘贴以下脚本代码**
-
-```Bash
-#!/bin/bash
-# Mihomo & UI 一键无损更新脚本
-
-echo "====================================="
-echo "  Mihomo & MetaCubeXD 一键更新工具"
-echo "====================================="
-echo "请选择你要更新的组件:"
-echo "1) 更新 Mihomo 内核 (Core)"
-echo "2) 更新 MetaCubeXD 面板 (UI)"
-echo "3) 退出"
-read -p "请输入选项 [1-3]: " choice
-
-if [ "$choice" == "1" ]; then
-    read -p "请输入你要更新的 Mihomo 版本号 (例如 v1.19.22): " core_version
-    echo "[1/4] 停止 Mihomo 服务..."
-    sudo systemctl stop mihomo
-    echo "[2/4] 正在下载 Mihomo $core_version ..."
-    wget "https://mirror.ghproxy.com/https://github.com/MetaCubeX/mihomo/releases/download/${core_version}/mihomo-linux-amd64-${core_version}.gz" -O /tmp/mihomo.gz
-    echo "[3/4] 解压并替换核心..."
-    gunzip -f /tmp/mihomo.gz
-    sudo mv /tmp/mihomo /usr/local/bin/mihomo
-    sudo chmod +x /usr/local/bin/mihomo
-    echo "[4/4] 启动服务..."
-    sudo systemctl start mihomo
-    echo "✅ Mihomo 内核更新完成！当前版本："
-    mihomo -v
-
-elif [ "$choice" == "2" ]; then
-    read -p "请输入你要更新的 UI 面板版本号 (例如 v1.242.0): " ui_version
-    echo "[1/4] 清理旧版本 UI 文件..."
-    sudo rm -rf /etc/mihomo/ui/*
-    echo "[2/4] 正在下载 MetaCubeXD $ui_version ..."
-    wget "https://mirror.ghproxy.com/https://github.com/MetaCubeX/metacubexd/releases/download/${ui_version}/compressed-dist.tgz" -O /tmp/ui.tgz
-    echo "[3/4] 解压并配置权限..."
-    sudo tar -xzvf /tmp/ui.tgz -C /etc/mihomo/ui
-    sudo chown -R root:root /etc/mihomo/ui
-    sudo chmod -R 755 /etc/mihomo/ui
-    rm /tmp/ui.tgz
-    echo "[4/4] 重启 Mihomo 服务..."
-    sudo systemctl restart mihomo
-    echo "✅ 前端面板更新完成！请在浏览器使用 Ctrl+F5 强制刷新网页。"
-
-else
-    echo "已退出更新。"
-fi
-```
-
-_(保存并退出：`Ctrl+O`, `Enter`, `Ctrl+X`)_
-
-**3. 赋予执行权限**
-
-```Bash
-chmod +x ~/update_mihomo.sh
-```
-
-**4. 日常使用方法** 以后当需要更新时，只需在终端执行：
-
-```Bash
-./update_mihomo.sh
-```
-
-按照屏幕上的中文提示输入对应的数字和版本号，脚本就会在后台帮你搞定一切。

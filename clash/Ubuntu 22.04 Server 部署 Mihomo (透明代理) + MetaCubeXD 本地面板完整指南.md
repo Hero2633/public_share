@@ -80,6 +80,7 @@ curl -L -o /etc/mihomo/config.yaml "你的订阅连接!"
 ```
 ![](attachments/Ubuntu%2022.04%20Server%20部署%20Mihomo%20(透明代理)%20+%20MetaCubeXD%20本地面板完整指南/file-20260326121136474.png)
 注意选**择Mihomo内核**！不要选择“复制订阅”！
+
 >如果没有`选择Mihomo内核`这一个选项，可以直接从Windows下的clash软件中导出yaml文件，然再上传到服务器，eg:
 >![](attachments/Ubuntu%2022.04%20Server%20部署%20Mihomo%20(透明代理)%20+%20MetaCubeXD%20本地面板完整指南/file-20260326121127178.png)
 >然后就会跳转到对应的yaml文件，具体如下:
@@ -89,7 +90,7 @@ curl -L -o /etc/mihomo/config.yaml "你的订阅连接!"
 
 _(注意：此配置已包含 TUN、Fake-IP 以及绝对路径的 UI 指向，具体的 `proxies`、`proxy-groups` 和 `rules` 请保留你之前导入的内容)_
 
-
+以下yaml文件可以直接导入config.yaml文件中，如果有字段冲突，可以以下面的配置为准!
 ```YAML
 # 1. 开启外部控制台（方便后续看延迟和切节点）
 external-controller: '0.0.0.0:9090' # 允许外部访问控制 API
@@ -110,11 +111,26 @@ dns:
 # 3. 开启 TUN 模式核心配置
 tun:
   enable: true
-  stack: system                     # 网络栈，推荐 system 或 mixed
+  stack: mixed                     # 网络栈，推荐 system 或 mixed
   dns-hijack:
     - any:53                        # 劫持所有 DNS 请求
   auto-route: true                  # 自动设置全局路由，接管全部流量
   auto-detect-interface: true       # 自动识别出口网卡
+  
+# 4. 流量嗅探的作用就是从纯 IP 的网络包里“抠”出真实的域名，让你的按域名分流规则（走代理或直连）绝不失效。
+sniffer:
+  enable: true                 # 开启嗅探开关
+  force-dns-mapping: true      # 强制使用 DNS 映射（解决部分应用直接请求 IP 的问题）
+  parse-pure-ip: true          # 启用纯 IP 嗅探（提取出域名后覆盖）
+  override-destination: true   # 全局覆盖目标 IP 为嗅探出的真实域名
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
 ```
 Mihomo 本身命令：
 `mihomo -d /etc/mihomo -t` **(极度常用！)** 测试配置文件是否有语法错误。每次你修改了 `config.yaml`，在重启服务前**一定要**运行这个命令。如果输出 `configuration file /etc/mihomo/config.yaml test is successful`，再执行重启操作，防止配置文件写错导致断网。
@@ -147,9 +163,8 @@ sudo chmod -R 755 /etc/mihomo/ui
 ## 五、 启动并验证服务
 **0. 再次修改config.yaml文件**
 ```yaml
-external-controller: '0.0.0.0:9097'
 external-ui: /etc/mihomo/ui                      # 新增这一行！告诉 Mihomo 面板文件在哪里
-secret: "Admin@123"
+secret: "Admin@123"                              # 新增这一行！设置Mihomo网页界面登录密码
 ```
 
 **1. 测试配置语法是否正确**

@@ -86,7 +86,7 @@ curl -L -o /etc/mihomo/config.yaml "你的订阅连接!"
 >然后就会跳转到对应的yaml文件，具体如下:
 >![](attachments/Ubuntu%2022.04%20Server%20部署%20Mihomo%20(透明代理)%20+%20MetaCubeXD%20本地面板完整指南/file-20260326121104195.png)
 
-**3. 修改一下config.yaml文件中的一下配置**
+**3. 修改config.yaml文件中的一些配置**
 
 _(注意：此配置已包含 TUN、Fake-IP 以及绝对路径的 UI 指向，具体的 `proxies`、`proxy-groups` 和 `rules` 请保留你之前导入的内容)_
 
@@ -94,6 +94,8 @@ _(注意：此配置已包含 TUN、Fake-IP 以及绝对路径的 UI 指向，�
 ```YAML
 # 1. 开启外部控制台（方便后续看延迟和切节点）
 external-controller: '0.0.0.0:9090' # 允许外部访问控制 API
+external-ui: /etc/mihomo/ui         # 指定前端面板文件路径
+external-ui-port: 9090              # Web UI 端口，与 external-controller 保持一致
 secret: '你的自定义密码'             # 必填！设置一个密码防止别人控制你的代理
 
 # 2. 开启 DNS 劫持（TUN 模式必须配合 DNS 劫持才能完美工作）
@@ -161,11 +163,6 @@ sudo chmod -R 755 /etc/mihomo/ui
 ```
 
 ## 五、 启动并验证服务
-**0. 再次修改config.yaml文件**
-```yaml
-external-ui: /etc/mihomo/ui                      # 新增这一行！告诉 Mihomo 面板文件在哪里
-secret: "Admin@123"                              # 新增这一行！设置Mihomo网页界面登录密码
-```
 
 **1. 测试配置语法是否正确**
 
@@ -189,11 +186,11 @@ sudo systemctl status mihomo  # 查看运行状态
 
 在同局域网的浏览器中打开（注意结尾的 `/` 不可省略）：
 
-👉 **`http://192.168.9.60:9090/ui/`**
+👉 **`http://你的服务器IP:9090/ui/`**
 
-- **API Base URL**: `http://192.168.9.60:9090`
+- **API Base URL**: `http://你的服务器IP:9090`
     
-- **Secret**: `Admin@123`
+- **Secret**: 你在 config.yaml 中设置的密码
     
 
 **2. 连通性测试命令**

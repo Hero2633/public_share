@@ -134,6 +134,12 @@ sniffer:
     QUIC:
       ports: [443, 8443]
 ```
+
+**端口说明**：
+- `external-controller: 0.0.0.0:9090` - API 控制端口，用于远程管理
+- `external-ui-port: 9090` - Web UI 访问端口，与 API 端口保持一致
+- 访问面板时使用 `http://服务器IP:9090/ui/`
+
 Mihomo 本身命令：
 `mihomo -d /etc/mihomo -t` **(极度常用！)** 测试配置文件是否有语法错误。每次你修改了 `config.yaml`，在重启服务前**一定要**运行这个命令。如果输出 `configuration file /etc/mihomo/config.yaml test is successful`，再执行重启操作，防止配置文件写错导致断网。
 ## 四、 本地部署 MetaCubeXD 前端面板

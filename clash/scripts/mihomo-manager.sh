@@ -3,11 +3,9 @@
 # mihomo-manager - Mihomo & MetaCubeXD 一键化管理工具
 #
 # 功能：安装、更新、卸载 Mihomo 和 MetaCubeXD
-# 作者：自动生成
+# 作者：mihomo-v2.5 pro AI自动生成
 # 版本：1.1.0
 #
-
-set -e
 
 # ==================== 颜色定义 ====================
 RED='\033[0;31m'
@@ -21,10 +19,10 @@ NC='\033[0m' # No Color
 MIHOMO_DIR="/etc/mihomo"
 MIHOMO_BIN="/usr/local/bin/mihomo"
 MIHOMO_SERVICE="/etc/systemd/system/mihomo.service"
-MANAGER_BIN="/usr/local/bin/mihomo-manager"
-LOG_FILE="/var/log/mihomo-manager.log"
-BACKUP_DIR="$HOME/mihomo-backup-$(date +%Y%m%d%H%M%S)"
+BACKUP_DIR="/tmp/mihomo-backup-$(date +%Y%m%d%H%M%S)"
 VERSION_CACHE_FILE="/tmp/mihomo-manager-cache.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MERGE_CONFIG_FILE="$SCRIPT_DIR/../conf/merge.yaml"
 
 # GitHub 镜像加速
 GITHUB_PROXY="https://gh-proxy.com"
@@ -39,100 +37,33 @@ USE_PROXY="false"
 # 缓存时间（秒）
 CACHE_TTL=3600  # 1小时
 
-# 默认配置
-DEFAULT_CONFIG='
-# Mihomo 默认配置
-mixed-port: 7890
-socks-port: 7891
-port: 7892
-allow-lan: true
-mode: rule
-log-level: info
-ipv6: false
-
-# 外部控制
-external-controller: "0.0.0.0:9090"
-external-ui: /etc/mihomo/ui
-secret: "mihomo2024"
-
-# DNS 配置
-dns:
-  enable: true
-  listen: 0.0.0.0:53
-  ipv6: false
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  nameserver:
-    - 223.5.5.5
-    - 114.114.114.114
-    - tls://dns.alidns.com
-
-# TUN 模式
-tun:
-  enable: true
-  stack: mixed
-  dns-hijack:
-    - any:53
-  auto-route: true
-  auto-detect-interface: true
-
-# 流量嗅探
-sniffer:
-  enable: true
-  force-dns-mapping: true
-  parse-pure-ip: true
-  override-destination: true
-  sniff:
-    HTTP:
-      ports: [80, 8080-8880]
-      override-destination: true
-    TLS:
-      ports: [443, 8443]
-    QUIC:
-      ports: [443, 8443]
-'
-
 # ==================== 工具函数 ====================
-
-# 日志函数
-log() {
-    local level="$1"
-    shift
-    local message="$*"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
-}
 
 # 打印信息
 info() {
     echo -e "${GREEN}[INFO]${NC} $*"
-    log "INFO" "$*"
 }
 
 # 打印警告
 warn() {
     echo -e "${YELLOW}[WARN]${NC} $*"
-    log "WARN" "$*"
 }
 
 # 打印错误
 error() {
     echo -e "${RED}[ERROR]${NC} $*"
-    log "ERROR" "$*"
 }
 
 # 打印调试信息
 debug() {
     if [ "$VERBOSE" = "true" ]; then
         echo -e "${CYAN}[DEBUG]${NC} $*"
-        log "DEBUG" "$*"
     fi
 }
 
 # 打印步骤
 step() {
     echo -e "${BLUE}[STEP]${NC} $*"
-    log "STEP" "$*"
 }
 
 # 检查是否为 root 用户
@@ -314,7 +245,7 @@ get_version_cache() {
         # 检查缓存是否过期
         if [ "$age" -lt "$CACHE_TTL" ]; then
             local version=$(cat "$VERSION_CACHE_FILE" | grep -o "\"${cache_key}\":\"[^\"]*\"" | grep -oE '"[^"]*"$' | tr -d '"' || echo "")
-            if [ -n "$version" ]; then
+            if [ -n "$version" ] && echo "$version" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
                 debug "从缓存获取版本: $version (缓存时间: ${age}秒前)"
                 echo "$version"
                 return 0
@@ -373,15 +304,15 @@ get_latest_version() {
     # 1. 从 GitHub API 获取（最可靠）
     debug "尝试从 GitHub API 获取版本..."
     local api_url="https://api.github.com/repos/$repo/releases/latest"
-    version=$(curl -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+    version=$(curl -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     
     # 2. 如果 API 失败，尝试使用代理访问 API
     if [ -z "$version" ] && [ "$USE_PROXY" = "true" ]; then
         debug "API 失败，尝试使用代理访问 API..."
-        version=$(curl -x "http://${PROXY_HOST}:${PROXY_PORT}" -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+        version=$(curl -x "http://${PROXY_HOST}:${PROXY_PORT}" -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
         
         if [ -z "$version" ]; then
-            version=$(curl -x "socks5://${PROXY_HOST}:${PROXY_PORT}" -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+            version=$(curl -x "socks5://${PROXY_HOST}:${PROXY_PORT}" -sL --connect-timeout 10 "$api_url" 2>/dev/null | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
         fi
     fi
     
@@ -399,6 +330,12 @@ get_latest_version() {
     
     if [ -z "$version" ]; then
         error "无法获取 $repo 最新版本，请检查网络连接或使用 --proxy 参数"
+        return 1
+    fi
+    
+    # 验证版本格式
+    if ! echo "$version" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+        error "获取到无效版本号: $version"
         return 1
     fi
     
@@ -557,16 +494,32 @@ service_start() {
     debug "启动 Mihomo 服务..."
     systemctl enable mihomo 2>/dev/null || true
     systemctl start mihomo
-    sleep 2
-    
+
+    # 等待服务稳定（mihomo 启动时需下载 GeoIP 等资源）
+    local wait_count=0
+    local max_wait=30
+    while [ $wait_count -lt $max_wait ]; do
+        sleep 1
+        wait_count=$((wait_count+1))
+        if ! systemctl is-active --quiet mihomo; then
+            error "Mihomo 服务启动失败"
+            journalctl -u mihomo --no-pager -n 10 --no-hostname
+            return 1
+        fi
+        if ss -tlnp 2>/dev/null | grep -q ":9090 "; then
+            info "Mihomo 服务启动成功"
+            return 0
+        fi
+    done
+
     if systemctl is-active --quiet mihomo; then
-        info "Mihomo 服务启动成功"
+        warn "Mihomo 服务启动超时，但进程仍在运行，请手动检查"
         return 0
-    else
-        error "Mihomo 服务启动失败"
-        journalctl -u mihomo --no-pager -n 20
-        return 1
     fi
+
+    error "Mihomo 服务启动失败"
+    journalctl -u mihomo --no-pager -n 10 --no-hostname
+    return 1
 }
 
 service_stop() {
@@ -580,13 +533,38 @@ service_stop() {
 verify_config() {
     if [ -f "$MIHOMO_DIR/config.yaml" ]; then
         debug "验证配置文件..."
-        if $MIHOMO_BIN -d "$MIHOMO_DIR" -t 2>/dev/null; then
+        local output
+        local exit_code
+
+        # 使用 timeout 防止 mihomo -t 因网络问题卡住（GeoIP 下载等）
+        output=$(timeout 30 $MIHOMO_BIN -d "$MIHOMO_DIR" -t 2>&1)
+        exit_code=$?
+
+        # timeout 退出码 124 表示超时
+        if [ $exit_code -eq 124 ]; then
+            warn "配置验证超时（可能因 GeoIP 下载），跳过验证"
+            return 0
+        fi
+
+        if [ $exit_code -eq 0 ]; then
             debug "配置文件验证通过"
             return 0
-        else
-            warn "配置文件验证失败，将使用默认配置"
-            return 1
         fi
+
+        # 检查是否只是 geoip.metadb 下载失败（配置文件本身有效）
+        if echo "$output" | grep -q "can't download MMDB\|can't initial GeoIP"; then
+            if echo "$output" | grep -q "yaml:\|mapping key\|unmarshal"; then
+                warn "配置文件 YAML 格式错误"
+                return 1
+            else
+                debug "配置文件验证通过（geoip.metadb 下载失败，不影响配置有效性）"
+                return 0
+            fi
+        fi
+
+        # 其他错误
+        warn "配置文件验证失败"
+        return 1
     fi
     return 1
 }
@@ -681,12 +659,75 @@ cmd_install() {
             
             error "安装已回滚，请检查错误并重试"
         fi
+        return 0
     }
     trap rollback EXIT
     
-    # 备份已有配置
+    # 1. 获取最新版本
+    step "[1/8] 获取最新版本信息..."
+    local mihomo_version=$(get_latest_version "$MIHOMO_REPO")
+    local metacubexd_version=$(get_latest_version "$METACUBEXD_REPO")
+
+    if [ -z "$mihomo_version" ] || [ -z "$metacubexd_version" ]; then
+        error "获取版本信息失败"
+        install_failed=true
+        rollback
+        return 1
+    fi
+
+    # 检查当前已安装版本
+    local current_mihomo=""
+    local current_ui=""
+    if [ -f "$MIHOMO_BIN" ]; then
+        current_mihomo=$($MIHOMO_BIN -v 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+    fi
+    current_ui=$(get_ui_version)
+    [ "$current_ui" = "未安装" ] && current_ui=""
+
+    local need_mihomo=true
+    local need_ui=true
+
+    if [ -n "$current_mihomo" ] && [ "$current_mihomo" = "$mihomo_version" ]; then
+        need_mihomo=false
+        info "Mihomo 已是最新版本: $current_mihomo，跳过下载"
+    else
+        if [ -n "$current_mihomo" ]; then
+            info "Mihomo 需要更新: $current_mihomo -> $mihomo_version"
+        else
+            info "Mihomo 最新版本: $mihomo_version"
+        fi
+    fi
+
+    if [ -n "$current_ui" ] && [ "$current_ui" = "$metacubexd_version" ]; then
+        need_ui=false
+        info "MetaCubeXD 已是最新版本: $current_ui，跳过下载"
+    else
+        if [ -n "$current_ui" ]; then
+            info "MetaCubeXD 需要更新: $current_ui -> $metacubexd_version"
+        else
+            info "MetaCubeXD 最新版本: $metacubexd_version"
+        fi
+    fi
+
+    # 如果两个组件都已是最新，且配置文件已存在，则无需操作
+    if [ "$need_mihomo" = "false" ] && [ "$need_ui" = "false" ] && [ -f "$MIHOMO_DIR/config.yaml" ]; then
+        # 清除 trap
+        trap - EXIT
+        echo ""
+        echo -e "${GREEN}========================================${NC}"
+        echo -e "${GREEN}  所有组件已是最新版本，无需安装${NC}"
+        echo -e "${GREEN}========================================${NC}"
+        echo ""
+        echo -e "  Mihomo:     ${CYAN}$current_mihomo${NC}"
+        echo -e "  MetaCubeXD: ${CYAN}$current_ui${NC}"
+        echo ""
+        echo -e "${GREEN}========================================${NC}"
+        return 0
+    fi
+
+    # 确认需要更新，开始备份
     backup_config
-    
+
     # 备份旧文件
     if [ -f "$MIHOMO_BIN" ]; then
         cp "$MIHOMO_BIN" "${MIHOMO_BIN}.bak"
@@ -697,74 +738,97 @@ cmd_install() {
     if [ -f "$MIHOMO_SERVICE" ]; then
         cp "$MIHOMO_SERVICE" "${MIHOMO_SERVICE}.bak"
     fi
-    
-    # 1. 获取最新版本
-    step "[1/7] 获取最新版本信息..."
-    local mihomo_version=$(get_latest_version "$MIHOMO_REPO")
-    local metacubexd_version=$(get_latest_version "$METACUBEXD_REPO")
-    
-    if [ -z "$mihomo_version" ] || [ -z "$metacubexd_version" ]; then
-        error "获取版本信息失败"
-        install_failed=true
-        rollback
-        return 1
-    fi
-    
-    info "Mihomo 最新版本: $mihomo_version"
-    info "MetaCubeXD 最新版本: $metacubexd_version"
-    
-    # 2. 下载 Mihomo
-    step "[2/7] 下载 Mihomo $mihomo_version..."
-    local mihomo_url="${GITHUB_PROXY}/https://github.com/${MIHOMO_REPO}/releases/download/${mihomo_version}/mihomo-linux-amd64-${mihomo_version}.gz"
+
+    # ==================== 阶段一：下载所有资源 ====================
+
+    # 2. 下载 Mihomo（按需）
     local mihomo_tmp="/tmp/mihomo.gz"
-    
-    if ! download_file "$mihomo_url" "$mihomo_tmp"; then
-        error "下载 Mihomo 失败"
-        install_failed=true
-        rollback
-        return 1
+    if [ "$need_mihomo" = "true" ]; then
+        step "[2/8] 下载 Mihomo $mihomo_version..."
+        local mihomo_url="${GITHUB_PROXY}/https://github.com/${MIHOMO_REPO}/releases/download/${mihomo_version}/mihomo-linux-amd64-${mihomo_version}.gz"
+        if ! download_file "$mihomo_url" "$mihomo_tmp"; then
+            error "下载 Mihomo 失败"
+            install_failed=true
+            rollback
+            return 1
+        fi
+    else
+        step "[2/8] 下载 Mihomo... 跳过（已是最新）"
     fi
-    
-    # 3. 安装 Mihomo
-    step "[3/7] 安装 Mihomo..."
-    gunzip -f "$mihomo_tmp"
-    mv -f "${mihomo_tmp%.gz}" "$MIHOMO_BIN"
-    chmod +x "$MIHOMO_BIN"
-    
-    if ! $MIHOMO_BIN -v > /dev/null 2>&1; then
-        error "Mihomo 安装失败"
-        install_failed=true
-        rollback
-        return 1
+
+    # 3. 下载 MetaCubeXD（按需）
+    local ui_tmp="/tmp/ui.tgz"
+    if [ "$need_ui" = "true" ]; then
+        step "[3/8] 下载 MetaCubeXD $metacubexd_version..."
+        local ui_url="${GITHUB_PROXY}/https://github.com/${METACUBEXD_REPO}/releases/download/${metacubexd_version}/compressed-dist.tgz"
+        if ! download_file "$ui_url" "$ui_tmp"; then
+            error "下载 MetaCubeXD 失败"
+            install_failed=true
+            rollback
+            return 1
+        fi
+    else
+        step "[3/8] 下载 MetaCubeXD... 跳过（已是最新）"
     fi
-    
-    info "Mihomo 安装成功: $($MIHOMO_BIN -v)"
-    
-    # 4. 创建配置目录
-    step "[4/7] 配置 Mihomo..."
-    mkdir -p "$MIHOMO_DIR"
-    
-    # 处理输入（URL 或文件）
+
+    # 4. 下载用户订阅配置（如果是 URL）
+    local user_tmp="/tmp/mihomo-user-$$.yaml"
+    local input_is_url=false
     if [[ "$input" =~ ^https?:// ]]; then
-        # URL 订阅链接
-        info "下载订阅配置..."
-        if ! download_file "$input" "$MIHOMO_DIR/config.yaml"; then
+        input_is_url=true
+        step "[4/8] 下载订阅配置..."
+        if ! download_file "$input" "$user_tmp"; then
+            rm -f "$user_tmp"
             error "下载订阅配置失败"
             install_failed=true
             rollback
             return 1
         fi
     elif [ -f "$input" ]; then
-        # 本地文件
-        info "使用本地配置文件: $input"
-        cp -f "$input" "$MIHOMO_DIR/config.yaml"
+        step "[4/8] 订阅配置... 使用本地文件"
+        user_tmp="$input"
     else
         error "无效的输入: $input"
         install_failed=true
         rollback
         return 1
     fi
-    
+
+    # ==================== 阶段二：安装和配置 ====================
+
+    # 5. 安装 Mihomo
+    if [ "$need_mihomo" = "true" ]; then
+        step "[5/8] 安装 Mihomo..."
+        gunzip -f "$mihomo_tmp"
+        mv -f "${mihomo_tmp%.gz}" "$MIHOMO_BIN"
+        chmod +x "$MIHOMO_BIN"
+
+        if ! $MIHOMO_BIN -v > /dev/null 2>&1; then
+            error "Mihomo 安装失败"
+            install_failed=true
+            rollback
+            return 1
+        fi
+
+        info "Mihomo 安装成功: $($MIHOMO_BIN -v)"
+    else
+        step "[5/8] 安装 Mihomo... 跳过（已是最新）"
+    fi
+
+    # 6. 合并配置文件
+    step "[6/8] 配置 Mihomo..."
+    mkdir -p "$MIHOMO_DIR"
+
+    info "合并配置文件（merge.yaml 优先）..."
+    if ! yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' "$user_tmp" "$MERGE_CONFIG_FILE" > "$MIHOMO_DIR/config.yaml"; then
+        error "配置文件合并失败"
+        install_failed=true
+        rollback
+        return 1
+    fi
+    [ "$input_is_url" = "true" ] && rm -f "$user_tmp"
+    info "配置合并完成"
+
     # 验证配置文件
     if ! verify_config; then
         error "配置文件验证失败，请检查配置文件: $MIHOMO_DIR/config.yaml"
@@ -772,37 +836,36 @@ cmd_install() {
         rollback
         exit 1
     fi
-    
-    # 5. 下载 MetaCubeXD
-    step "[5/7] 下载 MetaCubeXD $metacubexd_version..."
-    local ui_url="${GITHUB_PROXY}/https://github.com/${METACUBEXD_REPO}/releases/download/${metacubexd_version}/compressed-dist.tgz"
-    local ui_tmp="/tmp/ui.tgz"
-    
-    if ! download_file "$ui_url" "$ui_tmp"; then
-        error "下载 MetaCubeXD 失败"
-        install_failed=true
-        rollback
-        return 1
+
+    # 7. 安装 MetaCubeXD
+    if [ "$need_ui" = "true" ]; then
+        step "[7/8] 安装 MetaCubeXD..."
+        rm -rf "$MIHOMO_DIR/ui"
+        mkdir -p "$MIHOMO_DIR/ui"
+        tar -xzf "$ui_tmp" -C "$MIHOMO_DIR/ui"
+        rm -f "$ui_tmp"
+
+        # 修复权限
+        chown -R root:root "$MIHOMO_DIR/ui"
+        chmod -R 755 "$MIHOMO_DIR/ui"
+
+        # 保存版本信息
+        echo "$metacubexd_version" > "$MIHOMO_DIR/ui/version"
+
+        info "MetaCubeXD 安装成功"
+    else
+        step "[7/8] 安装 MetaCubeXD... 跳过（已是最新）"
     fi
-    
-    # 6. 安装 MetaCubeXD
-    step "[6/7] 安装 MetaCubeXD..."
-    rm -rf "$MIHOMO_DIR/ui"
-    mkdir -p "$MIHOMO_DIR/ui"
-    tar -xzf "$ui_tmp" -C "$MIHOMO_DIR/ui"
-    rm -f "$ui_tmp"
-    
-    # 修复权限
-    chown -R root:root "$MIHOMO_DIR/ui"
-    chmod -R 755 "$MIHOMO_DIR/ui"
-    
-    # 保存版本信息
-    echo "$metacubexd_version" > "$MIHOMO_DIR/ui/version"
-    
-    info "MetaCubeXD 安装成功"
-    
-    # 7. 创建服务并启动
-    step "[7/7] 配置系统服务..."
+
+    # 8. 创建服务并启动
+    step "[8/8] 配置系统服务..."
+
+    # 预下载 GeoIP 数据库（mihomo 启动时必需，否则会卡住或崩溃）
+    if [ ! -f "$MIHOMO_DIR/geoip.metadb" ] || [ "$(stat -c%s "$MIHOMO_DIR/geoip.metadb" 2>/dev/null || echo 0)" -lt 1000000 ]; then
+        info "预下载 GeoIP 数据库..."
+        download_file "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb" "$MIHOMO_DIR/geoip.metadb" || warn "GeoIP 下载失败，服务启动可能较慢"
+    fi
+
     service_install
     
     if service_start; then
@@ -810,10 +873,14 @@ cmd_install() {
         rm -f "${MIHOMO_BIN}.bak"
         rm -rf "${MIHOMO_DIR}.bak"
         rm -f "${MIHOMO_SERVICE}.bak"
-        
+        rm -rf "$BACKUP_DIR"
+
+        # 清理 mihomo 自动生成的 config.yaml.user
+        rm -f "$MIHOMO_DIR/config.yaml.user"
+
         # 清除 trap
         trap - EXIT
-        
+
         show_install_summary
     else
         error "服务启动失败，请检查日志: journalctl -u mihomo"
@@ -826,39 +893,82 @@ cmd_install() {
 # 更新命令
 cmd_update() {
     local target_version="$1"
-    
+
     check_root
-    
+
     # 检查是否已安装
     if [ ! -f "$MIHOMO_BIN" ]; then
         error "Mihomo 未安装，请先使用 --install 安装"
         exit 1
     fi
-    
+
     info "开始更新 Mihomo 和 MetaCubeXD..."
-    
+
     # 检测代理
     detect_local_proxy
-    
-    # 备份配置
+
+    # 1. 获取版本信息
+    step "[1/6] 获取版本信息..."
+
+    local current_mihomo=$($MIHOMO_BIN -v 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "未知")
+    local current_ui=$(get_ui_version)
+
+    info "当前 Mihomo 版本: $current_mihomo"
+    info "当前 MetaCubeXD 版本: $current_ui"
+
+    local latest_mihomo
+    local latest_metacubexd
+
+    if [ -n "$target_version" ]; then
+        latest_mihomo="$target_version"
+        latest_metacubexd=$(get_latest_version "$METACUBEXD_REPO")
+    else
+        latest_mihomo=$(get_latest_version "$MIHOMO_REPO")
+        latest_metacubexd=$(get_latest_version "$METACUBEXD_REPO")
+    fi
+
+    if [ -z "$latest_mihomo" ] || [ -z "$latest_metacubexd" ]; then
+        error "获取版本信息失败"
+        return 1
+    fi
+
+    info "目标 Mihomo 版本: $latest_mihomo"
+    info "目标 MetaCubeXD 版本: $latest_metacubexd"
+
+    # 2. 检查是否需要更新
+    if [ "$current_mihomo" = "$latest_mihomo" ] && [ "$current_ui" = "$latest_metacubexd" ]; then
+        echo ""
+        echo -e "${GREEN}========================================${NC}"
+        echo -e "${GREEN}  已是最新版本，无需更新${NC}"
+        echo -e "${GREEN}========================================${NC}"
+        echo ""
+        echo -e "  Mihomo:     ${CYAN}$current_mihomo${NC}"
+        echo -e "  MetaCubeXD: ${CYAN}$current_ui${NC}"
+        echo ""
+        echo -e "${GREEN}========================================${NC}"
+        return 0
+    fi
+
+    # 3. 确认需要更新，开始备份
     backup_config
-    
-    # 备份当前版本，用于回滚
+
     local backup_dir="/tmp/mihomo-update-backup-$$"
     mkdir -p "$backup_dir"
     cp "$MIHOMO_BIN" "$backup_dir/mihomo.bak" 2>/dev/null || true
     cp -r "$MIHOMO_DIR/ui" "$backup_dir/ui.bak" 2>/dev/null || true
-    
+
+    # 清理函数：无论成功或失败都清理 /tmp 备份
+    cleanup_tmp() {
+        rm -rf "$backup_dir"
+        rm -rf "$BACKUP_DIR"
+    }
+
     # 设置错误回滚
     local update_failed=false
     rollback() {
         if [ "$update_failed" = "true" ]; then
             warn "更新失败，正在回滚..."
-            
-            # 停止服务
             systemctl stop mihomo 2>/dev/null || true
-            
-            # 恢复备份
             if [ -f "$backup_dir/mihomo.bak" ]; then
                 cp "$backup_dir/mihomo.bak" "$MIHOMO_BIN"
                 chmod +x "$MIHOMO_BIN"
@@ -867,103 +977,58 @@ cmd_update() {
                 rm -rf "$MIHOMO_DIR/ui"
                 cp -r "$backup_dir/ui.bak" "$MIHOMO_DIR/ui"
             fi
-            
-            # 重启服务
             systemctl start mihomo 2>/dev/null || true
-            
-            # 清理备份
-            rm -rf "$backup_dir"
-            
+            cleanup_tmp
             error "更新已回滚，请检查错误并重试"
         fi
+        return 0
     }
     trap rollback EXIT
-    
-    # 1. 获取版本信息
-    step "[1/6] 获取版本信息..."
-    
-    local current_mihomo=$($MIHOMO_BIN -v 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "未知")
-    local current_ui=$(get_ui_version)
-    
-    info "当前 Mihomo 版本: $current_mihomo"
-    info "当前 MetaCubeXD 版本: $current_ui"
-    
-    local latest_mihomo
-    local latest_metacubexd
-    
-    if [ -n "$target_version" ]; then
-        # 使用指定版本
-        latest_mihomo="$target_version"
-        latest_metacubexd=$(get_latest_version "$METACUBEXD_REPO")
-    else
-        # 获取最新版本
-        latest_mihomo=$(get_latest_version "$MIHOMO_REPO")
-        latest_metacubexd=$(get_latest_version "$METACUBEXD_REPO")
-    fi
-    
-    if [ -z "$latest_mihomo" ] || [ -z "$latest_metacubexd" ]; then
-        error "获取版本信息失败"
-        update_failed=true
-        return 1
-    fi
-    
-    info "目标 Mihomo 版本: $latest_mihomo"
-    info "目标 MetaCubeXD 版本: $latest_metacubexd"
-    
-    # 2. 下载新版本（使用代理）
+
+    # 4. 下载新版本
     step "[2/6] 下载 Mihomo $latest_mihomo..."
     local mihomo_url="${GITHUB_PROXY}/https://github.com/${MIHOMO_REPO}/releases/download/${latest_mihomo}/mihomo-linux-amd64-${latest_mihomo}.gz"
     local mihomo_tmp="/tmp/mihomo_update.gz"
-    
+
     if ! download_file "$mihomo_url" "$mihomo_tmp"; then
         error "下载 Mihomo 失败"
         update_failed=true
         return 1
     fi
-    
+
     step "[3/6] 下载 MetaCubeXD $latest_metacubexd..."
     local ui_url="${GITHUB_PROXY}/https://github.com/${METACUBEXD_REPO}/releases/download/${latest_metacubexd}/compressed-dist.tgz"
     local ui_tmp="/tmp/ui_update.tgz"
-    
+
     if ! download_file "$ui_url" "$ui_tmp"; then
         error "下载 MetaCubeXD 失败"
         update_failed=true
         return 1
     fi
-    
-    # 3. 停止服务
+
+    # 5. 停止服务并更新
     step "[4/6] 停止 Mihomo 服务..."
     service_stop
-    
-    # 4. 更新 Mihomo
+
     step "[5/6] 更新 Mihomo..."
     gunzip -f "$mihomo_tmp"
     mv -f "${mihomo_tmp%.gz}" "$MIHOMO_BIN"
     chmod +x "$MIHOMO_BIN"
-    
-    # 5. 更新 MetaCubeXD
+
     step "[6/6] 更新 MetaCubeXD..."
     rm -rf "$MIHOMO_DIR/ui"
     mkdir -p "$MIHOMO_DIR/ui"
     tar -xzf "$ui_tmp" -C "$MIHOMO_DIR/ui"
     rm -f "$ui_tmp"
-    
-    # 修复权限
     chown -R root:root "$MIHOMO_DIR/ui"
     chmod -R 755 "$MIHOMO_DIR/ui"
-    
-    # 保存版本信息
     echo "$latest_metacubexd" > "$MIHOMO_DIR/ui/version"
-    
+
     # 6. 重启服务
     info "重启 Mihomo 服务..."
     if service_start; then
-        # 更新成功，清理备份
-        rm -rf "$backup_dir"
-        
-        # 清除 trap
+        cleanup_tmp
         trap - EXIT
-        
         echo ""
         echo -e "${GREEN}========================================${NC}"
         echo -e "${GREEN}  更新完成！${NC}"
@@ -984,58 +1049,42 @@ cmd_update() {
 # 卸载命令
 cmd_uninstall() {
     check_root
-    
+
     if [ ! -f "$MIHOMO_BIN" ] && [ ! -d "$MIHOMO_DIR" ]; then
         error "Mihomo 未安装"
         exit 1
     fi
-    
-    echo -e "${YELLOW}警告：此操作将完全卸载 Mihomo 和所有配置文件！${NC}"
-    echo ""
-    read -p "是否保留配置文件备份？(Y/n): " keep_backup
-    
-    if [[ ! "$keep_backup" =~ ^[Nn]$ ]]; then
-        backup_config
-        info "配置已备份到: $BACKUP_DIR"
-    fi
-    
+
     info "开始卸载 Mihomo..."
-    
+
     # 1. 停止服务
     step "[1/5] 停止 Mihomo 服务..."
     service_stop
-    
+
     # 2. 删除服务文件
     step "[2/5] 删除服务文件..."
     rm -f "$MIHOMO_SERVICE"
     systemctl daemon-reload
-    
+
     # 3. 删除可执行文件
     step "[3/5] 删除可执行文件..."
     rm -f "$MIHOMO_BIN"
-    
+
     # 4. 删除配置目录
     step "[4/5] 删除配置目录..."
     rm -rf "$MIHOMO_DIR"
-    
-    # 5. 删除日志和缓存文件
-    step "[5/5] 清理日志和缓存文件..."
-    rm -f "$LOG_FILE"
+
+    # 5. 清理缓存文件
+    step "[5/5] 清理缓存文件..."
     rm -f "$VERSION_CACHE_FILE"
-    
+
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}  卸载完成！${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
-    
-    if [[ ! "$keep_backup" =~ ^[Nn]$ ]]; then
-        echo -e "  配置备份: ${YELLOW}$BACKUP_DIR${NC}"
-        echo ""
-    fi
-    
     echo -e "  如需重新安装，请运行:"
-    echo -e "    ${CYAN}mihomo-manager --install -i <订阅链接>${NC}"
+    echo -e "    ${CYAN}./scripts/mihomo-manager.sh --install -i <配置文件>${NC}"
     echo ""
     echo -e "${GREEN}========================================${NC}"
 }
@@ -1157,10 +1206,6 @@ cmd_help() {
 }
 
 # ==================== 主程序 ====================
-
-# 初始化日志
-mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
-touch "$LOG_FILE" 2>/dev/null || true
 
 # 解析参数
 VERBOSE="false"

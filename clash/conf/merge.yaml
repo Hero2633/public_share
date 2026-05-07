@@ -1,0 +1,51 @@
+# Mihomo 默认配置（优先级最高）
+# 安装时会与此配置合并，用户配置中的 proxies/proxy-groups/rules 会保留
+
+mixed-port: 7890
+socks-port: 7891
+port: 7892
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: false
+
+# 外部控制
+external-controller: "0.0.0.0:9090"
+external-ui: /etc/mihomo/ui
+secret: "mihomo2024"
+
+# DNS 配置
+dns:
+  enable: true
+  listen: 0.0.0.0:53
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 223.5.5.5
+    - 114.114.114.114
+    - tls://dns.alidns.com
+
+# TUN 模式
+tun:
+  enable: true
+  stack: mixed
+  dns-hijack:
+    - any:53
+  auto-route: true
+  auto-detect-interface: true
+
+# 流量嗅探
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
